@@ -9,6 +9,12 @@ def test_normalize():
     assert normalize("Intel(R) Wireless 123") == "intelrwireless123"
 
 
+def test_normalize_cjk():
+    """CJK 字符保留——normalize 只去非字母数字，不删除 CJK。"""
+    assert normalize("腾讯QQ") == "腾讯qq"
+    assert normalize("한글") == "한글"
+
+
 def test_detect_orphans_marks_unmatched(tmp_path):
     root = tmp_path / "PF"
     root.mkdir()
@@ -48,7 +54,7 @@ def test_detect_orphans_fuzzy_match(tmp_path):
     root = tmp_path / "PF"
     root.mkdir()
     (root / "InstaledAp").mkdir()  # 轻微拼写差异
-    (root / "f").write_text("x")
+    (root / "InstaledAp" / "data").write_text("x")
     items = detect_orphans(
         installed_names=["InstalledApp"],
         root_dirs=[str(root)],
@@ -64,6 +70,57 @@ def test_detect_orphans_skips_files_and_empty_dirs(tmp_path):
     (root / "EmptyDir").mkdir()
     items = detect_orphans(
         installed_names=["Whatever"],
+        root_dirs=[str(root)],
+        cleaner_id="orphan_remnants",
+    )
+    assert items == []
+
+
+def test_detect_orphans_empty_norm_name_not_matched(tmp_path):
+    """installed_names 含 "!!!" 时 normalize 得空串，不应误匹配而漏报残留。"""
+    root = tmp_path / "PF"
+    root.mkdir()
+    orphan = root / "RealOrphanApp"
+    orphan.mkdir()
+    (orphan / "data").write_text("x")
+    items = detect_orphans(
+        installed_names=["!!!", "KnownApp"],
+        root_dirs=[str(root)],
+        cleaner_id="orphan_remnants",
+    )
+    assert any(i.path == str(orphan) for i in items)
+
+
+def test_detect_orphans_special_chars_dir_skipped(tmp_path):
+    """目录名全为特殊字符（"!!!"）且非空 → not nname 路径跳过。"""
+    root = tmp_path / "PF"
+    root.mkdir()
+    special = root / "!!!"
+    special.mkdir()
+    (special / "f").write_text("x")
+    items = detect_orphans(
+        installed_names=["Whatever"],
+        root_dirs=[str(root)],
+        cleaner_id="orphan_remnants",
+    )
+    assert items == []
+
+
+def test_permission_error_on_listdir_skipped(tmp_path, monkeypatch):
+    """os.listdir 抛 PermissionError 时该 root 被跳过，不中断扫描。"""
+    root = tmp_path / "PF"
+    root.mkdir()
+
+    class FailListDir:
+        called = False
+
+        def __call__(self, path):
+            raise PermissionError("EACCES")
+
+    fail = FailListDir()
+    monkeypatch.setattr(os, "listdir", fail)
+    items = detect_orphans(
+        installed_names=["App"],
         root_dirs=[str(root)],
         cleaner_id="orphan_remnants",
     )

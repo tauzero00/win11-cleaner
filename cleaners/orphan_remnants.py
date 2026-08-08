@@ -51,17 +51,24 @@ def detect_orphans(
     whitelist: Optional[set[str]] = None,
 ) -> list[CleanItem]:
     """枚举 root_dirs 第一级目录，返回疑似未卸载残留。"""
-    norm_installed = {normalize(n) for n in installed_names if n}
+    norm_installed = {nn for n in installed_names if n and (nn := normalize(n))}
     wl = whitelist or WHITELIST
     items: list[CleanItem] = []
     for root in root_dirs:
         if not os.path.isdir(root):
             continue
-        for name in sorted(os.listdir(root)):
+        try:
+            entries = sorted(os.listdir(root))
+        except OSError:
+            continue
+        for name in entries:
             if name.startswith("."):
                 continue
             full = os.path.join(root, name)
-            if not os.path.isdir(full):
+            try:
+                if not os.path.isdir(full):
+                    continue
+            except OSError:
                 continue
             nname = normalize(name)
             if not nname or nname in wl:
