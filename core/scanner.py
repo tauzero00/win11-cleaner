@@ -7,14 +7,20 @@ import threading
 
 
 def dir_size(path: str) -> tuple[int, int]:
-    """递归计算目录大小（字节）与文件数。跳过无权限、不存在、符号链接的子项。"""
+    """递归计算目录大小（字节）与文件数。跳过无权限、不存在、符号链接与 junction 的子项。"""
     if not os.path.isdir(path):
         return 0, 0
     total = 0
     count = 0
     for dirpath, dirnames, filenames in os.walk(path, topdown=True):
-        # 剪掉符号链接目录，避免循环
-        dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))]
+        # 剪掉符号链接与 junction 目录：islink 对 junction 返回 False，不剪会沿
+        # Windows 的 reparse 自环（如 C:\\ProgramData\\Application Data）把整棵树
+        # 重复遍历最多 64 遍，导致大小/数量虚高和 I/O 风暴
+        dirnames[:] = [
+            d for d in dirnames
+            if not os.path.islink(os.path.join(dirpath, d))
+            and not os.path.isjunction(os.path.join(dirpath, d))
+        ]
         for name in filenames:
             fp = os.path.join(dirpath, name)
             try:

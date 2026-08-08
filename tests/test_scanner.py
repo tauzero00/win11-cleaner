@@ -1,7 +1,19 @@
 """目录大小计算与格式化测试。"""
 import os
+import subprocess
+
+import pytest
 
 from core.scanner import ScanWorker, dir_size, human_size
+
+
+def _make_junction(link: str, target: str) -> bool:
+    """用 mklink /J 创建 junction；失败（非 Windows/无权限）返回 False。"""
+    r = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        capture_output=True,
+    )
+    return r.returncode == 0
 
 
 def test_dir_size_counts_bytes_and_files(tmp_path):
@@ -25,9 +37,35 @@ def test_dir_size_skips_symlink_loop(tmp_path):
     target.mkdir()
     (target / "f.txt").write_text("x")
     link = tmp_path / "link"
-    os.symlink(target, link)
+    try:
+        os.symlink(target, link)
+    except OSError:
+        pytest.skip("无法创建符号链接（需开发者模式或管理员权限）")
     size, count = dir_size(str(tmp_path))
     assert count == 1  # 链接目录不递归
+
+
+def test_dir_size_skips_junction(tmp_path):
+    """Windows junction（islink 返回 False）不被递归统计。"""
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "f.txt").write_text("x")
+    link = tmp_path / "loop"
+    if not _make_junction(str(link), str(target)):
+        pytest.skip("无法创建 junction（非 Windows 或无权限）")
+    size, count = dir_size(str(tmp_path))
+    assert count == 1  # junction 目录不展开
+
+
+def test_dir_size_skips_junction_self_loop(tmp_path):
+    """父目录内指回父目录的 junction 自环不会陷入无限递归。"""
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "f.txt").write_text("x")
+    if not _make_junction(str(root / "loop"), str(root)):
+        pytest.skip("无法创建 junction（非 Windows 或无权限）")
+    size, count = dir_size(str(root))
+    assert count == 1
 
 
 def test_human_size():
