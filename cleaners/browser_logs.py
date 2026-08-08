@@ -13,39 +13,61 @@ class BrowserLogsCleaner(Cleaner):
 
     def scan(self) -> list[CleanItem]:
         items: list[CleanItem] = []
-        la = self.p("local_appdata", "LOCALAPPDATA")
-        pd = self.p("program_data", "ProgramData")
+        items.extend(self._scan_chromium_caches())
+        items.extend(self._scan_firefox_caches())
+        items.extend(self._scan_wer_reports())
+        items.extend(self._scan_crash_dumps())
+        return items
 
-        # 浏览器缓存：chrome/edge 的 Cache|Code Cache|GPUCache，firefox 的 cache2|startupCache
+    def _scan_chromium_caches(self) -> list[CleanItem]:
+        """Chrome/Edge 的 Cache|Code Cache|GPUCache。"""
+        la = self.p("local_appdata", "LOCALAPPDATA")
+        if not la:
+            return []
+        items: list[CleanItem] = []
         for base in (
-            os.path.join(la, "Google", "Chrome", "User Data") if la else None,
-            os.path.join(la, "Microsoft", "Edge", "User Data") if la else None,
+            os.path.join(la, "Google", "Chrome", "User Data"),
+            os.path.join(la, "Microsoft", "Edge", "User Data"),
         ):
-            if base:
-                for sub in ("Cache", "Code Cache", "GPUCache"):
-                    for path in glob.glob(os.path.join(base, "*", sub)):
-                        item = make_dir_item(path, self.id, f"浏览器缓存 {path}", RISK_LOW, False)
-                        if item:
-                            items.append(item)
-        if la:
-            firefox_profiles = os.path.join(la, "Mozilla", "Firefox", "Profiles")
-            for sub in ("cache2", "startupCache"):
-                for path in glob.glob(os.path.join(firefox_profiles, "*", sub)):
-                    item = make_dir_item(path, self.id, f"Firefox 缓存 {path}", RISK_LOW, False)
+            for sub in ("Cache", "Code Cache", "GPUCache"):
+                for path in glob.glob(os.path.join(base, "*", sub)):
+                    item = make_dir_item(path, self.id, f"浏览器缓存 {path}", RISK_LOW, False)
                     if item:
                         items.append(item)
+        return items
 
-        # 诊断日志：WER 报告与崩溃转储
-        if pd:
-            for sub in ("ReportArchive", "ReportQueue"):
-                wer = os.path.join(pd, "Microsoft", "Windows", "WER", sub)
-                item = make_dir_item(wer, self.id, f"Windows 错误报告 {wer}", RISK_LOW, False)
+    def _scan_firefox_caches(self) -> list[CleanItem]:
+        """Firefox 的 cache2|startupCache。"""
+        la = self.p("local_appdata", "LOCALAPPDATA")
+        if not la:
+            return []
+        items: list[CleanItem] = []
+        profiles = os.path.join(la, "Mozilla", "Firefox", "Profiles")
+        for sub in ("cache2", "startupCache"):
+            for path in glob.glob(os.path.join(profiles, "*", sub)):
+                item = make_dir_item(path, self.id, f"Firefox 缓存 {path}", RISK_LOW, False)
                 if item:
                     items.append(item)
-        if la:
-            cd = os.path.join(la, "CrashDumps")
-            item = make_dir_item(cd, self.id, f"崩溃转储 {cd}", RISK_LOW, False)
+        return items
+
+    def _scan_wer_reports(self) -> list[CleanItem]:
+        """Windows 错误报告 ReportArchive|ReportQueue。"""
+        pd = self.p("program_data", "ProgramData")
+        if not pd:
+            return []
+        items: list[CleanItem] = []
+        for sub in ("ReportArchive", "ReportQueue"):
+            wer = os.path.join(pd, "Microsoft", "Windows", "WER", sub)
+            item = make_dir_item(wer, self.id, f"Windows 错误报告 {wer}", RISK_LOW, False)
             if item:
                 items.append(item)
-
         return items
+
+    def _scan_crash_dumps(self) -> list[CleanItem]:
+        """崩溃转储 CrashDumps。"""
+        la = self.p("local_appdata", "LOCALAPPDATA")
+        if not la:
+            return []
+        cd = os.path.join(la, "CrashDumps")
+        item = make_dir_item(cd, self.id, f"崩溃转储 {cd}", RISK_LOW, False)
+        return [item] if item else []
