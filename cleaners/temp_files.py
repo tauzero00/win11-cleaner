@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import glob
 import os
-from typing import Optional
 
 from cleaners.base import RISK_LOW, CleanItem, Cleaner, make_dir_item
 
@@ -22,6 +21,8 @@ class TempFilesCleaner(Cleaner):
 
     def _scan_user_temp(self) -> list[CleanItem]:
         path = self.p("user_temp", "TEMP")
+        if not path:
+            return []
         item = make_dir_item(path, self.id, f"用户临时文件 {path}", RISK_LOW, False)
         return [item] if item else []
 

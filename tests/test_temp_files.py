@@ -6,9 +6,28 @@ def test_scan_user_temp(tmp_path):
     user_temp = tmp_path / "user_temp"
     user_temp.mkdir()
     (user_temp / "a.txt").write_text("hello")
-    c = TempFilesCleaner(root_overrides={"user_temp": str(user_temp)})
+    c = TempFilesCleaner(
+        root_overrides={
+            "user_temp": str(user_temp),
+            "system_temp": str(tmp_path / "缺"),
+            "prefetch": str(tmp_path / "缺2"),
+            "explorer_dir": str(tmp_path / "缺3"),
+        }
+    )
     items = c.scan()
     assert any(i.cleaner_id == "temp_files" and i.path == str(user_temp) for i in items)
+
+
+def test_scan_user_temp_missing_env_treated_as_empty(monkeypatch, tmp_path):
+    monkeypatch.delenv("TEMP", raising=False)
+    c = TempFilesCleaner(
+        root_overrides={
+            "system_temp": str(tmp_path / "缺"),
+            "prefetch": str(tmp_path / "缺2"),
+            "explorer_dir": str(tmp_path / "缺3"),
+        }
+    )
+    assert c.scan() == []
 
 
 def test_scan_missing_dirs_skipped(tmp_path):
@@ -46,7 +65,14 @@ def test_scan_system_temp_contents_only(tmp_path):
     sys_temp = tmp_path / "Windows_Temp"
     sys_temp.mkdir()
     (sys_temp / "f.tmp").write_text("x")
-    c = TempFilesCleaner(root_overrides={"system_temp": str(sys_temp)})
+    c = TempFilesCleaner(
+        root_overrides={
+            "system_temp": str(sys_temp),
+            "user_temp": str(tmp_path / "缺"),
+            "prefetch": str(tmp_path / "缺2"),
+            "explorer_dir": str(tmp_path / "缺3"),
+        }
+    )
     items = c.scan()
     item = next(i for i in items if i.path == str(sys_temp))
     assert item.delete_contents_only is True
