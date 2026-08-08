@@ -13,7 +13,7 @@ class CleanWorker(threading.Thread):
 
     消息格式：
     ("item_done", 序号, 总数, item, 成功, 原因, 释放字节)
-    ("clean_finished", None, None, None, None, None, None)
+    ("clean_finished",)
     """
 
     def __init__(self, items: list[CleanItem], deleter: Deleter, msg_queue: queue.Queue):
@@ -27,4 +27,4 @@ class CleanWorker(threading.Thread):
         for i, item in enumerate(self.items, 1):
             ok, reason, freed = self.deleter.delete(item)
             self.msg_queue.put(("item_done", i, total, item, ok, reason, freed))
-        self.msg_queue.put(("clean_finished", None, None, None, None, None, None))
+        self.msg_queue.put(("clean_finished",))

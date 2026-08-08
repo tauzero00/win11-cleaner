@@ -21,12 +21,16 @@ class CleanerApp(tk.Tk):
         self.minsize(760, 480)
 
         self.cleaners = get_cleaners()
+        self._cleaner_names = {c.id: c.display_name for c in self.cleaners}
         self.category_vars: dict[str, tk.BooleanVar] = {}
-        self.category_sizes: dict[str, int] = {}
         self.items: dict[str, CleanItem] = {}     # path -> item
         self.row_ids: dict[str, str] = {}          # path -> treeview iid
+        self.iid_to_path: dict[str, str] = {}       # treeview iid -> path
         self.msg_queue = queue.Queue()
         self._busy = False
+        self._result_ok: list = []
+        self._result_fail: list = []
+        self._result_freed: list = []
 
         self._build_ui()
         self.after(100, self._poll)
@@ -52,7 +56,6 @@ class CleanerApp(tk.Tk):
             )
             btn.pack(anchor="w", pady=3)
             self.cat_buttons[c.id] = btn
-            self.category_sizes[c.id] = 0
 
         # 右：结果列表
         right = ttk.Frame(self, padding=8)
@@ -100,8 +103,7 @@ class CleanerApp(tk.Tk):
         self.tree.delete(*self.tree.get_children())
         self.items.clear()
         self.row_ids.clear()
-        for cid in self.category_vars:
-            self.category_sizes[cid] = 0
+        self.iid_to_path.clear()
         for c in self.cleaners:
             self.cat_buttons[c.id].configure(text=f"{c.display_name}  (扫描中…)")
         self.progress.configure(mode="indeterminate")
@@ -112,7 +114,6 @@ class CleanerApp(tk.Tk):
         total = 0
         for item in items:
             self.items[item.path] = item
-            self.category_sizes[cleaner_id] += item.size
             total += item.size
         self.cat_buttons[cleaner_id].configure(
             text=f"{self._cat_name(cleaner_id)}  ({human_size(total)})"
@@ -122,16 +123,14 @@ class CleanerApp(tk.Tk):
             mark = "☑" if item.checked else "☐"
             iid = self.tree.insert("", "end", values=(mark, item.label, human_size(item.size)))
             self.row_ids[item.path] = iid
+            self.iid_to_path[iid] = item.path
         self._refresh_summary()
 
     def _on_category_error(self, cleaner_id: str, err: str):
         self.cat_buttons[cleaner_id].configure(text=f"{self._cat_name(cleaner_id)}  (错误: {err})")
 
     def _cat_name(self, cleaner_id: str) -> str:
-        for c in self.cleaners:
-            if c.id == cleaner_id:
-                return c.display_name
-        return cleaner_id
+        return self._cleaner_names.get(cleaner_id, cleaner_id)
 
     def _on_scan_finished(self):
         self._busy = False
@@ -144,6 +143,8 @@ class CleanerApp(tk.Tk):
     # ---------- 勾选 ----------
 
     def _toggle_category(self, cleaner_id: str):
+        if self._busy:
+            return
         checked = self.category_vars[cleaner_id].get()
         for path, item in self.items.items():
             if item.cleaner_id == cleaner_id:
@@ -158,7 +159,7 @@ class CleanerApp(tk.Tk):
         iid = self.tree.identify_row(event.y)
         if not iid:
             return
-        path = next((p for p, i in self.row_ids.items() if i == iid), None)
+        path = self.iid_to_path.get(iid)
         if path is None:
             return
         item = self.items[path]
@@ -212,12 +213,12 @@ class CleanerApp(tk.Tk):
             self._result_fail.append((item, reason))
 
     def _on_clean_finished(self):
-        self._busy = False
         self.progress.configure(value=0)
-        self.rescan_btn.state(["!disabled"])
-        self.clean_btn.state(["!disabled"])
         self.status_var.set("清理完成，重新扫描以查看结果")
         self._show_result()
+        self._busy = False
+        self.rescan_btn.state(["!disabled"])
+        self.clean_btn.state(["!disabled"])
 
     def _show_result(self):
         # 汇总统计（从消息队列读取完整明细，见 _handle 的收集）
@@ -269,10 +270,6 @@ class CleanerApp(tk.Tk):
         elif kind == "clean_finished":
             self._on_clean_finished()
 
-    # 清理结果统计（初始化于 start_clean）
-    _result_ok: list = []
-    _result_fail: list = []
-    _result_freed: list = []
 
 
 def main():
