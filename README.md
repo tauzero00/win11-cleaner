@@ -26,6 +26,15 @@ python main.py
 
 需要 Python 3.13+，仅支持 Windows。
 
+## 打包为 exe
+
+```bash
+pip install pyinstaller
+pyinstaller --noconsole --onefile --name "C盘清理工具" main.py
+```
+
+产物在 `dist/C盘清理工具.exe`（单文件，无需 Python 环境）。启动时应用内自动请求管理员权限，拒绝则降级运行（仅可扫描）。`C盘清理工具.spec` 为构建配置。
+
 ## 测试
 
 ```bash
