@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import time
 from typing import Iterable, Optional
 
 import send2trash
+
+from core.processes import running_process_paths
 
 # 永不删除的系统关键目录（含其下所有内容）。
 SYSTEM_CRITICAL_DIRS = [
@@ -16,6 +17,14 @@ SYSTEM_CRITICAL_DIRS = [
     "C:\\Windows\\WinSxS",
     "C:\\Windows\\Servicing",
     "C:\\Windows\\Installer",
+    "C:\\Windows\\SystemApps",
+    "C:\\Windows\\DriverStore",
+    "C:\\Windows\\Fonts",
+    "C:\\Windows\\Resources",
+    "C:\\Windows\\Boot",
+    "C:\\Windows\\Inf",
+    "C:\\Windows\\System32\\config",
+    "C:\\Program Files\\WindowsApps",
     "C:\\Program Files\\Common Files",
     "C:\\Program Files (x86)\\Common Files",
     "C:\\ProgramData\\Microsoft\\Windows\\Start Menu",
@@ -26,23 +35,17 @@ SYSTEM_DIR_BODIES = ["C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86
 
 
 def _running_process_dirs() -> set[str]:
-    """当前运行中进程的 exe 所在目录集合。失败时返回空集。"""
-    script = "Get-Process | Where-Object { $_.Path } | Select-Object -ExpandProperty Path"
-    try:
-        out = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=30,
-        )
-    except Exception:
-        return set()
+    """当前运行中进程的 exe 所在目录集合。失败时返回空集。
+
+    统一走 core.processes（显式 UTF-8）：旧实现按 locale 解码，
+    中文路径会解成乱码，导致"运行中程序目录不可删"的保护失效。
+    """
     dirs = set()
-    for line in out.stdout.splitlines():
-        line = line.strip()
-        if line:
-            try:
-                dirs.add(os.path.normcase(os.path.abspath(os.path.dirname(line))))
-            except OSError:
-                pass
+    for line in running_process_paths():
+        try:
+            dirs.add(os.path.normcase(os.path.abspath(os.path.dirname(line))))
+        except OSError:
+            pass
     return dirs
 
 

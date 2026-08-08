@@ -4,12 +4,12 @@ from __future__ import annotations
 import difflib
 import os
 import re
-import subprocess
 import time
 import winreg
 from typing import Iterable, Optional
 
 from cleaners.base import RISK_HIGH, CleanItem, Cleaner
+from core.processes import running_process_paths
 from core.scanner import dir_size
 
 # 系统自有、永远不算残留的目录名（normalize 之后的小写字母数字）
@@ -49,6 +49,13 @@ WHITELIST = {
 }
 
 FUZZY_THRESHOLD = 0.6
+
+# 已安装程序枚举的注册表根（测试可 monkeypatch 覆盖）
+_REGISTRY_ROOTS = [
+    (winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_64KEY),
+    (winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_32KEY),
+    (winreg.HKEY_CURRENT_USER, 0),
+]
 
 
 def normalize(name: str) -> str:
@@ -236,12 +243,16 @@ class OrphanRemnantsCleaner(Cleaner):
         )
 
     def _registry_values(self, value_name: str) -> list[str]:
-        """从 HKLM Uninstall（64/32 位视角）读取指定值。"""
+        """从 HKLM/HKCU Uninstall 读取指定值。
+
+        HKCU 覆盖 per-user 安装（微信、企业微信、VS Code 等），
+        只读 HKLM 会把它们误判为"已卸载残留"。
+        """
         values: list[str] = []
         subkey = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
-        for flags in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+        for root, flags in _REGISTRY_ROOTS:
             try:
-                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, subkey, 0, winreg.KEY_READ | flags) as k:
+                with winreg.OpenKey(root, subkey, 0, winreg.KEY_READ | flags) as k:
                     count = winreg.QueryInfoKey(k)[0]
                     for i in range(count):
                         try:
@@ -274,21 +285,4 @@ class OrphanRemnantsCleaner(Cleaner):
         """运行中进程的可执行文件路径（测试可用 root_overrides["running_paths"] 覆盖）。"""
         if "running_paths" in self.root_overrides:
             return list(self.root_overrides["running_paths"])
-        try:
-            out = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 "Get-Process | Select-Object -ExpandProperty Path"],
-                capture_output=True, timeout=15,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return []
-        # PowerShell 5.1 管道输出为 UTF-16LE，PowerShell 7 为 UTF-8；按 \x00 探测
-        raw = out.stdout
-        text = raw.decode("utf-16-le") if b"\x00" in raw else raw.decode("utf-8", "replace")
-        paths = []
-        for line in text.splitlines():
-            line = line.strip().rstrip("\r")
-            if line and os.path.isabs(line):
-                paths.append(line)
-        return paths
+        return list(running_process_paths())

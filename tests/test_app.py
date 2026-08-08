@@ -461,6 +461,31 @@ class TestFullCleanFlow:
 
 
 # ---------------------------------------------------------------------------
+# 消息泵健壮性
+# ---------------------------------------------------------------------------
+
+class TestPollRobustness:
+
+    def test_poll_survives_handle_exception(self, app, monkeypatch):
+        """_handle 抛异常后 _poll 仍重新排程——消息泵不能被一条坏消息杀死。"""
+        def boom(msg):
+            raise ValueError("未知消息")
+
+        monkeypatch.setattr(app, "_handle", boom)
+        scheduled = []
+        monkeypatch.setattr(app, "after", lambda *a, **kw: scheduled.append(a))
+        app.msg_queue.put(("unknown_message", 1))  # 让 get_nowait 能取到消息
+        app._poll()
+        assert len(scheduled) == 1  # after(100, self._poll) 仍被调用
+
+    def test_poll_reschedules_normally(self, app, monkeypatch):
+        scheduled = []
+        monkeypatch.setattr(app, "after", lambda *a, **kw: scheduled.append(a))
+        app._poll()
+        assert len(scheduled) == 1
+
+
+# ---------------------------------------------------------------------------
 # clean_finished 协议
 # ---------------------------------------------------------------------------
 

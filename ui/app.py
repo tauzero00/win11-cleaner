@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import queue
+import sys
 
 import tkinter as tk
 import tkinter.messagebox  # 显式导入：无此导入 tk.messagebox 是 AttributeError（清理确认框不弹）
@@ -187,10 +188,12 @@ class CleanerApp(tk.Tk):
             tk.messagebox.showinfo("C盘清理工具", "没有勾选任何清理项。")
             return
         freed = sum(i.size for i in selected)
+        permanent = sum(1 for i in selected if not i.to_recycle)
         if not tk.messagebox.askyesno(
             "确认清理",
             f"将清理 {len(selected)} 项，预计释放 {human_size(freed)}。\n\n"
-            "高风险项（软件残留）会移入回收站，其余为永久删除。继续？",
+            f"高风险项（软件残留）会移入回收站，可恢复；"
+            f"其余 {permanent} 项（含 Windows.old 等）将被永久删除、无法恢复。\n\n继续？",
         ):
             return
         self._busy = True
@@ -237,7 +240,7 @@ class CleanerApp(tk.Tk):
         lines = [
             f"成功：{ok_count} 项",
             f"失败：{fail_count} 项",
-            f"总计释放空间：{human_size(total_freed)}",
+            f"预计释放空间（按扫描大小统计）：{human_size(total_freed)}",
             "",
             "失败明细：",
         ]
@@ -254,7 +257,11 @@ class CleanerApp(tk.Tk):
                 self._handle(self.msg_queue.get_nowait())
         except queue.Empty:
             pass
-        self.after(100, self._poll)
+        except Exception as exc:
+            # 消息泵不能被一条坏消息杀死：记录并继续，UI 状态不能冻结
+            print(f"消息处理异常: {exc}", file=sys.stderr)
+        finally:
+            self.after(100, self._poll)
 
     def _handle(self, msg):
         kind = msg[0]
@@ -270,6 +277,8 @@ class CleanerApp(tk.Tk):
             self._on_item_done(msg[1], msg[2], msg[3], msg[4], msg[5], msg[6])
         elif kind == "clean_finished":
             self._on_clean_finished()
+        elif kind == "clean_error":
+            self.status_var.set(f"清理异常: {msg[1]}")
 
 
 

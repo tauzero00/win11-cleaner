@@ -59,6 +59,23 @@ def test_validate_rejects_windows_dir_body():
     assert d.validate(item) is not None
 
 
+@pytest.mark.parametrize("path", [
+    r"C:\Windows\SystemApps",
+    r"C:\Windows\DriverStore",
+    r"C:\Windows\Fonts",
+    r"C:\Windows\Resources",
+    r"C:\Windows\Boot",
+    r"C:\Windows\Inf",
+    r"C:\Windows\System32\config",
+    r"C:\Program Files\WindowsApps",
+])
+def test_validate_rejects_extended_critical_dirs(path):
+    """系统关键目录黑名单须覆盖更多 Windows 核心目录（纵深防御）。"""
+    item = make_item(path, prefixes=(path,))
+    d = Deleter()
+    assert d.validate(item) is not None
+
+
 def test_validate_rejects_running_process_dir(tmp_path):
     item = make_item(tmp_path / "x", prefixes=(str(tmp_path),))
     d = Deleter()

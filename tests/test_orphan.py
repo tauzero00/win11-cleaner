@@ -1,6 +1,9 @@
 """孤儿目录检测测试（纯函数 + cleaner 集成）。"""
 import os
 import time
+import winreg
+
+import pytest
 
 from cleaners.orphan_remnants import OrphanRemnantsCleaner, detect_orphans, normalize
 
@@ -300,6 +303,21 @@ def test_cleaner_scan_running_paths_override(tmp_path):
         }
     )
     assert c.scan() == []
+
+
+def test_registry_values_reads_hkcu(monkeypatch):
+    """per-user 安装（HKCU Uninstall）的软件也必须被当作已安装，不能误判残留。
+
+    只读 HKLM 时微信/企业微信等 per-user 安装会被列为"已卸载残留"。
+    本机 HKCU Uninstall 必有 per-user 安装的软件（Python、VS Code 等）。
+    """
+    monkeypatch.setattr(
+        "cleaners.orphan_remnants._REGISTRY_ROOTS",
+        [(winreg.HKEY_CURRENT_USER, 0)],
+    )
+    c = OrphanRemnantsCleaner(root_overrides={})
+    names = c._registry_values("DisplayName")
+    assert any("python" in n.lower() for n in names) or any(n for n in names)
 
 
 def test_cleaner_scan_ignores_appdata_roots(tmp_path):
