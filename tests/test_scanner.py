@@ -56,3 +56,29 @@ def test_scan_worker_posts_messages(tmp_path):
     assert kinds == ["category_start", "category_done", "scan_finished"]
     assert msgs[0][1] == "fake"
     assert msgs[2][0] == "scan_finished"
+
+
+def test_scan_worker_error_path(tmp_path):
+    import queue
+
+    class BadCleaner:
+        id = "bad"
+        display_name = "坏清理器"
+
+        def scan(self):
+            raise RuntimeError("boom")
+
+    class GoodCleaner:
+        id = "good"
+        display_name = "好清理器"
+
+        def scan(self):
+            return []
+
+    q = queue.Queue()
+    ScanWorker([BadCleaner(), GoodCleaner()], q).run()
+    msgs = [q.get_nowait() for _ in range(q.qsize())]
+    kinds = [m[0] for m in msgs]
+    assert kinds == ["category_start", "category_error", "category_start", "category_done", "scan_finished"]
+    assert msgs[1][2] == "boom"
+    assert msgs[4][0] == "scan_finished"
