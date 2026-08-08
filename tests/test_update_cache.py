@@ -13,6 +13,7 @@ def test_scan_download_dir(tmp_path):
     assert item.path == str(dl)
     assert item.risk == "medium"
     assert item.to_recycle is False
+    assert item.checked is True
 
 
 def test_scan_windows_old_off_by_default(tmp_path):
@@ -73,6 +74,7 @@ def test_scan_all_missing_returns_empty(tmp_path):
         root_overrides={
             "system_root": str(tmp_path / "缺"),
             "program_data": str(tmp_path / "PD缺"),
+            "windows_old": str(tmp_path / "缺_windows_old"),
         }
     )
     assert c.scan() == []
