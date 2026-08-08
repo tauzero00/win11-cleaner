@@ -131,3 +131,18 @@ def test_delete_failure_returns_reason(tmp_path):
     assert ok is False
     assert "系统关键目录" in reason
     assert freed == 0
+
+
+def test_delete_contents_only_all_fail(tmp_path, monkeypatch):
+    target = tmp_path / "keepdir"
+    target.mkdir()
+    (target / "a.txt").write_text("x")
+    (target / "b.txt").write_text("y")
+    item = make_item(target, contents_only=True)
+    d = Deleter()
+    # 让 _delete_path 始终抛异常
+    monkeypatch.setattr(d, "_delete_path", lambda p: (_ for _ in ()).throw(OSError("mock")))
+    ok, reason, freed = d.delete(item)
+    assert ok is False
+    assert "2 个子项均无法删除" in reason
+    assert freed == 0

@@ -140,12 +140,14 @@ class Deleter:
 
     def _delete_contents(self, dirpath: str):
         """只删除目录内容，不删除目录本身。全部子项都失败才抛异常。"""
+        children = os.listdir(dirpath)
+        total = len(children)
         failed = 0
-        for name in os.listdir(dirpath):
+        for name in children:
             child = os.path.join(dirpath, name)
             try:
                 self._delete_path(child)
             except OSError:
                 failed += 1
-        if failed and failed == len(os.listdir(dirpath)):
+        if failed and failed == total:
             raise OSError(f"{dirpath} 下的 {failed} 个子项均无法删除")
