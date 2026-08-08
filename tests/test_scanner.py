@@ -1,0 +1,58 @@
+"""目录大小计算与格式化测试。"""
+import os
+
+from core.scanner import ScanWorker, dir_size, human_size
+
+
+def test_dir_size_counts_bytes_and_files(tmp_path):
+    (tmp_path / "a.txt").write_text("12345")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "b.bin").write_bytes(b"\x00" * 10)
+    size, count = dir_size(str(tmp_path))
+    assert size == 15
+    assert count == 2
+
+
+def test_dir_size_skips_missing(tmp_path):
+    size, count = dir_size(str(tmp_path / "不存在"))
+    assert size == 0
+    assert count == 0
+
+
+def test_dir_size_skips_symlink_loop(tmp_path):
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "f.txt").write_text("x")
+    link = tmp_path / "link"
+    os.symlink(target, link)
+    size, count = dir_size(str(tmp_path))
+    assert count == 1  # 链接目录不递归
+
+
+def test_human_size():
+    assert human_size(0) == "0 B"
+    assert human_size(500) == "500 B"
+    assert human_size(2048) == "2.0 KB"
+    assert human_size(5 * 1024 * 1024) == "5.0 MB"
+    assert human_size(int(1.5 * 1024 ** 3)) == "1.5 GB"
+
+
+def test_scan_worker_posts_messages(tmp_path):
+    import queue
+
+    class FakeCleaner:
+        id = "fake"
+        display_name = "假清理器"
+
+        def scan(self):
+            return []
+
+    q = queue.Queue()
+    w = ScanWorker([FakeCleaner()], q)
+    w.run()  # 同步跑完
+    msgs = [q.get_nowait() for _ in range(q.qsize())]
+    kinds = [m[0] for m in msgs]
+    assert kinds == ["category_start", "category_done", "scan_finished"]
+    assert msgs[0][1] == "fake"
+    assert msgs[2][0] == "scan_finished"
