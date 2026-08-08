@@ -4,6 +4,7 @@ from __future__ import annotations
 import queue
 
 import tkinter as tk
+import tkinter.messagebox  # 显式导入：无此导入 tk.messagebox 是 AttributeError（清理确认框不弹）
 import tkinter.ttk as ttk
 
 from cleaners import get_cleaners

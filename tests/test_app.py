@@ -1,6 +1,9 @@
 """主窗口 UI 逻辑测试（不依赖显示器，withdrawn 窗口）。"""
 from __future__ import annotations
 
+import queue
+import subprocess
+import sys
 import tkinter as tk
 from unittest.mock import MagicMock
 
@@ -373,6 +376,88 @@ class TestShowResult:
         assert len(toplevels) == 1
         assert toplevels[0].title() == "清理结果"
         toplevels[0].destroy()
+
+
+# ---------------------------------------------------------------------------
+# 真实导入环境（防 import 副作用掩盖 bug）
+# ---------------------------------------------------------------------------
+
+class TestRealImportEnvironment:
+
+    def test_tk_messagebox_resolves_after_app_import(self):
+        """ui.app 导入后 tk.messagebox 必须可解析。
+
+        曾在无显式 import tkinter.messagebox 时只有测试进程可用
+        （monkeypatch 的字符串路径解析隐式导入掩盖了 bug），真实 app
+        点「开始清理」抛 AttributeError 毫无反应。子进程隔离验证。
+        """
+        code = (
+            "import ui.app\n"
+            "import tkinter as tk\n"
+            "print(hasattr(tk, 'messagebox'))\n"
+        )
+        r = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True,
+            cwd=str(__import__("pathlib").Path(__file__).resolve().parents[1]),
+        )
+        assert r.returncode == 0, r.stderr
+        assert "True" in r.stdout
+
+
+# ---------------------------------------------------------------------------
+# 端到端：真实 CleanWorker 线程 → 消息泵 → 完成复位
+# ---------------------------------------------------------------------------
+
+class TestFullCleanFlow:
+
+    def test_start_clean_full_flow(self, app, monkeypatch):
+        """真实 CleanWorker 线程跑完 → item_done 逐项处理 → clean_finished 复位。"""
+        from ui.threads import CleanWorker
+
+        class FakeDeleter:
+            def __init__(self):
+                self.calls = []
+
+            def delete(self, item):
+                self.calls.append(item.path)
+                return True, "", item.size
+
+        items = _make_items("C:/tmp/a", "C:/tmp/b")
+        _populate_tree(app, items)
+        monkeypatch.setattr("tkinter.messagebox.askyesno", lambda *a, **kw: True)
+        monkeypatch.setattr("ui.app.CleanWorker", lambda sel, d, q: CleanWorker(sel, d, q))
+
+        real_queue = queue.Queue()
+        app.msg_queue = real_queue
+        deleter = FakeDeleter()
+
+        def fake_worker(sel, d, q):
+            w = CleanWorker(sel, d, q)
+            w.deleter = deleter
+            return w
+
+        monkeypatch.setattr("ui.app.CleanWorker", fake_worker)
+        app.start_clean()
+        assert app._busy is True
+
+        # 同步泵消息（等同 _poll 主循环），直到清理完成
+        timeout = 0
+        while app._busy and timeout < 200:
+            try:
+                app._handle(real_queue.get_nowait())
+            except queue.Empty:
+                app.update()
+                timeout += 1
+        assert app._busy is False
+        assert sorted(deleter.calls) == ["C:/tmp/a", "C:/tmp/b"]  # 两项都真删了
+        assert {i.path for i in app._result_ok} == {"C:/tmp/a", "C:/tmp/b"}
+        assert "清理完成" in app.status_var.get()
+        # 结果对话框已弹出（_show_result 在复位前执行）
+        toplevels = [w for w in app.winfo_children() if isinstance(w, tk.Toplevel)]
+        assert any(w.title() == "清理结果" for w in toplevels)
+        for w in toplevels:
+            w.destroy()
 
 
 # ---------------------------------------------------------------------------
