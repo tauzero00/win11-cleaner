@@ -37,7 +37,11 @@ def test_detect_orphans_marks_unmatched(tmp_path):
 def test_detect_orphans_whitelist(tmp_path):
     root = tmp_path / "PF"
     root.mkdir()
-    for name in ("Common Files", "Internet Explorer", "Windows Kits", "AppWithData"):
+    for name in (
+        "Common Files", "Internet Explorer", "Windows Kits",
+        "Application Data", "Local Settings",  # Windows 遗留 junction
+        "AppWithData",
+    ):
         d = root / name
         d.mkdir()
         (d / "f").write_text("x")

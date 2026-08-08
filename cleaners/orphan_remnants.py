@@ -23,6 +23,19 @@ WHITELIST = {
     "packagecache",
     "usoshared",
     "windowsapps",
+    # Windows 遗留 junction 目录名（Application Data → AppData 等），非软件残留
+    "applicationdata",
+    "localsettings",
+    "mydocuments",
+    "recent",
+    "sendto",
+    "templates",
+    "startmenu",
+    "nethood",
+    "printhood",
+    "history",
+    "temporaryinternetfiles",
+    "cookies",
 }
 
 FUZZY_THRESHOLD = 0.6
